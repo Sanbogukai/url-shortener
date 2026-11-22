@@ -27,6 +27,10 @@ const JSON_LIMIT = '16kb';
 const HTTP_NOT_FOUND = 404;
 const HTTP_SERVER_ERROR = 500;
 
+// How many proxies sit between the visitor and the app on Render (see the comment where
+// it is used).
+const TRUSTED_PROXY_HOPS = 2;
+
 // New links one visitor may create per minute, unless the caller sets another limit.
 export const DEFAULT_CREATE_LIMIT = 20;
 
@@ -69,10 +73,13 @@ export function createApp(options: AppOptions): Express {
   // Creates the app that every middleware and route below is attached to.
   const app = express();
 
-  // Render puts one proxy in front of the app. Trusting exactly one hop makes req.ip the
-  // visitor's address (for the rate limit) and req.hostname the public host name (for
-  // spotting links back to the shortener), without letting visitors fake either.
-  app.set('trust proxy', 1);
+  // Render puts two proxies in front of the app: Cloudflare, then its own load balancer.
+  // Each adds the address it got the request from to X-Forwarded-For. Trusting exactly
+  // those two hops makes req.ip the visitor's address (for the rate limit), without letting
+  // a visitor fake it by sending their own X-Forwarded-For: anything they send sits further
+  // left and is ignored. Trusting only one hop made req.ip a Cloudflare server, which
+  // changes between requests and split one visitor's limit across several counters.
+  app.set('trust proxy', TRUSTED_PROXY_HOPS);
 
   // Parses JSON request bodies into req.body, refusing anything over the limit with a 413.
   app.use(express.json({ limit: JSON_LIMIT }));

@@ -83,6 +83,19 @@ export function createApp(options: AppOptions): Express {
 
   // Parses JSON request bodies into req.body, refusing anything over the limit with a 413.
   app.use(express.json({ limit: JSON_LIMIT }));
+  // TEMPORARY: shows how the proxies on Render report the caller's address. Removed once
+  // the trust proxy setting is fixed. It echoes only the caller's own request back.
+  app.get('/api/debug/ip', (req, res) => {
+    res.json({
+      ip: req.ip,
+      ips: req.ips,
+      remote: req.socket.remoteAddress,
+      xff: req.headers['x-forwarded-for'],
+      cf: req.headers['cf-connecting-ip'],
+      trueClient: req.headers['true-client-ip'],
+      xRealIp: req.headers['x-real-ip'],
+    });
+  });
   // The JSON API: POST /api/links and GET /api/links/:code.
   app.use('/api', apiRouter(deps));
 

@@ -1,0 +1,31 @@
+# Runs the type check and the tests on every push and pull request, so a broken test shows
+# as a red cross on GitHub instead of being found later.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    # Every command below runs inside server/.
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      # Fetches the repository's code.
+      - uses: actions/checkout@v4
+      # Installs the Node version pinned in .node-version, and caches npm downloads
+      # between runs using the lock file as the key.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      # Installs exactly what the lock file lists.
+      - run: npm ci
+      # tsc --noEmit: Node never checks types, so this step does.
+      - run: npm run typecheck
+      # Vitest, once, without watching.
+      - run: npm test

@@ -4,6 +4,14 @@
 
 // Express handles HTTP: routing and JSON parsing. The other two are only types.
 import express, { type ErrorRequestHandler, type Express } from 'express';
+// The code generator, swappable in tests.
+import { type CodeGenerator, randomCode } from './codes.ts';
+// The database connection type.
+import type { Db } from './db.ts';
+// GET /:code.
+import { redirectRouter } from './redirect.ts';
+// Everything under /api.
+import { apiRouter } from './routes.ts';
 // The error shape every failure is sent in, shared with the client.
 import type { ApiError } from '../../shared/types.ts';
 
@@ -15,14 +23,46 @@ const JSON_LIMIT = '16kb';
 const HTTP_NOT_FOUND = 404;
 const HTTP_SERVER_ERROR = 500;
 
-// Returns a new, fully wired app. Each call makes a separate app, so every test file can
-// have its own and nothing leaks between them.
-export function createApp(): Express {
+// New links one visitor may create per minute, unless the caller sets another limit.
+export const DEFAULT_CREATE_LIMIT = 20;
+
+// What the caller passes in. Only the database is required; the rest have real defaults
+// and exist so a test can swap them: a fixed clock, a code generator that returns chosen
+// codes, a lower rate limit.
+export interface AppOptions {
+  db: Db;
+  now?: () => Date;
+  generateCode?: CodeGenerator;
+  createLimit?: number;
+}
+
+// The same services with every default filled in. The routers receive this.
+export type AppDeps = Required<AppOptions>;
+
+// Returns a new, fully wired app. Each call makes a separate app, so every test can have
+// its own, with its own database and its own rate-limit counts.
+export function createApp(options: AppOptions): Express {
+  // Fills in the defaults: the real clock, the real generator and the normal limit.
+  const deps: AppDeps = {
+    now: () => new Date(),
+    generateCode: randomCode,
+    createLimit: DEFAULT_CREATE_LIMIT,
+    // Anything the caller passed wins over the defaults above.
+    ...options,
+  };
+
   // Creates the app that every middleware and route below is attached to.
   const app = express();
 
+  // Render puts one proxy in front of the app. Trusting exactly one hop makes req.ip the
+  // visitor's address (for the rate limit) and req.hostname the public host name (for
+  // spotting links back to the shortener), without letting visitors fake either.
+  app.set('trust proxy', 1);
+
   // Parses JSON request bodies into req.body, refusing anything over the limit with a 413.
   app.use(express.json({ limit: JSON_LIMIT }));
+  // The JSON API: POST /api/links and GET /api/links/:code.
+  app.use('/api', apiRouter(deps));
 
   // Unknown API routes get JSON, not Express's HTML page. It runs only when no route
   // above matched, because a matching route ends the request.
@@ -32,6 +72,9 @@ export function createApp(): Express {
     // 404 "not found", naming the method and path that had no route.
     res.status(HTTP_NOT_FOUND).json(body);
   });
+
+  // Short links, after /api so that "api" can never be treated as a code.
+  app.use(redirectRouter(deps));
 
   // Errors always come back as JSON. Bad JSON bodies arrive here with status 400, and
   // bodies over the limit with 413. Express knows this is the error handler because it

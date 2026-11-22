@@ -204,21 +204,22 @@ describe('rate limit', () => {
     expect(res.body).toEqual({ error: 'Too many new links; try again in a minute' });
   });
 
-  it('counts by the visitor behind the two proxies, not by the proxy or a forged header', async () => {
-    // On Render the header reads "anything the visitor sent, visitor, Cloudflare server", and
-    // the load balancer is the connection itself (here, Supertest on 127.0.0.1).
+  it('counts by the visitor behind the three proxies, not by a proxy or a forged header', async () => {
+    // On Render the header reads "anything the visitor sent, visitor, Cloudflare server,
+    // internal balancer", and the local proxy is the connection itself (here, Supertest on
+    // 127.0.0.1).
     const { api } = makeApp({ createLimit: 1 });
     const first = await api
       .post('/api/links')
-      .set('X-Forwarded-For', '9.9.9.1, 203.0.113.7, 104.16.0.1')
+      .set('X-Forwarded-For', '9.9.9.1, 203.0.113.7, 104.16.0.1, 10.0.0.1')
       .send({ url: GOOD_URL });
     expect(first.status).toBe(CREATED);
 
-    // Same visitor, a different forged prefix and a different Cloudflare server: still one
-    // counter, so the limit of 1 is already used up.
+    // Same visitor, a different forged prefix and different proxies: still one counter, so
+    // the limit of 1 is already used up.
     const second = await api
       .post('/api/links')
-      .set('X-Forwarded-For', '9.9.9.2, 203.0.113.7, 104.16.0.2')
+      .set('X-Forwarded-For', '9.9.9.2, 203.0.113.7, 104.16.0.2, 10.0.0.2')
       .send({ url: GOOD_URL });
     expect(second.status).toBe(TOO_MANY_REQUESTS);
   });

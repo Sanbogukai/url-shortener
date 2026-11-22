@@ -29,7 +29,7 @@ const HTTP_SERVER_ERROR = 500;
 
 // How many proxies sit between the visitor and the app on Render (see the comment where
 // it is used).
-const TRUSTED_PROXY_HOPS = 2;
+const TRUSTED_PROXY_HOPS = 3;
 
 // New links one visitor may create per minute, unless the caller sets another limit.
 export const DEFAULT_CREATE_LIMIT = 20;
@@ -73,29 +73,18 @@ export function createApp(options: AppOptions): Express {
   // Creates the app that every middleware and route below is attached to.
   const app = express();
 
-  // Render puts two proxies in front of the app: Cloudflare, then its own load balancer.
-  // Each adds the address it got the request from to X-Forwarded-For. Trusting exactly
-  // those two hops makes req.ip the visitor's address (for the rate limit), without letting
-  // a visitor fake it by sending their own X-Forwarded-For: anything they send sits further
-  // left and is ignored. Trusting only one hop made req.ip a Cloudflare server, which
-  // changes between requests and split one visitor's limit across several counters.
+  // Render puts three proxies in front of the app: Cloudflare, an internal load balancer
+  // (a 10.x address) and a local proxy on the same machine (::1). Each adds the address it
+  // got the request from to X-Forwarded-For, so the header reads "visitor, Cloudflare,
+  // balancer" and the connection itself comes from the local proxy. Trusting exactly those
+  // three hops makes req.ip the visitor's address (for the rate limit), without letting a
+  // visitor fake it: anything they send in their own X-Forwarded-For sits further left and
+  // is ignored. Trusting fewer hops made req.ip a proxy that changes between requests,
+  // which split one visitor's limit across several counters.
   app.set('trust proxy', TRUSTED_PROXY_HOPS);
 
   // Parses JSON request bodies into req.body, refusing anything over the limit with a 413.
   app.use(express.json({ limit: JSON_LIMIT }));
-  // TEMPORARY: shows how the proxies on Render report the caller's address. Removed once
-  // the trust proxy setting is fixed. It echoes only the caller's own request back.
-  app.get('/api/debug/ip', (req, res) => {
-    res.json({
-      ip: req.ip,
-      ips: req.ips,
-      remote: req.socket.remoteAddress,
-      xff: req.headers['x-forwarded-for'],
-      cf: req.headers['cf-connecting-ip'],
-      trueClient: req.headers['true-client-ip'],
-      xRealIp: req.headers['x-real-ip'],
-    });
-  });
   // The JSON API: POST /api/links and GET /api/links/:code.
   app.use('/api', apiRouter(deps));
 

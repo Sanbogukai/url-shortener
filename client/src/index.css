@@ -171,6 +171,14 @@ h2 {
   margin: 0 0 1.75rem;
 }
 
+/* The demo notice between the subtitle and the form: small and quiet, a footnote rather
+   than a warning. The negative top margin tucks it under the subtitle's bottom spacing. */
+.demo-note {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: -1rem 0 1.5rem;
+}
+
 /* The form card lines its contents up on the left, unlike the centred hero text. */
 .shorten {
   text-align: left;

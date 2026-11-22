@@ -7,6 +7,8 @@ import request from 'supertest';
 import { type AppOptions, createApp } from '../src/app.ts';
 // Opens a database; IN_MEMORY makes one that vanishes when the test ends.
 import { type Db, IN_MEMORY, openDb, toSqlTime } from '../src/db.ts';
+// Turns a file: URL into a plain path.
+import { fileURLToPath } from 'node:url';
 
 // The HTTP status codes the tests expect, by name, so each check says what it means.
 export const OK = 200;
@@ -25,12 +27,16 @@ export const NOW = new Date('2026-11-22T12:00:00Z');
 // A link that passes every check, for tests that only need some link to exist.
 export const GOOD_URL = 'https://example.com/a/long/path?with=query';
 
+// A folder that does not exist, standing in for the client build. The tests then behave the
+// same whether or not client/dist has been built on this machine.
+export const NO_CLIENT = fileURLToPath(new URL('./no-client-build', import.meta.url));
+
 // Builds a fresh app. `overrides` can swap the clock, the code generator or the limit.
 export function makeApp(overrides: Partial<AppOptions> = {}) {
   // A new empty database for this test alone.
   const db = openDb(IN_MEMORY);
-  // The fixed clock first, so a test's own `now` override still wins.
-  const app = createApp({ db, now: () => NOW, ...overrides });
+  // The fixed clock and the missing build first, so a test's own overrides still win.
+  const app = createApp({ db, now: () => NOW, clientDist: NO_CLIENT, ...overrides });
   // `api` is a Supertest agent bound to this app; `db` lets a test check or seed rows directly.
   return { api: request(app), db };
 }

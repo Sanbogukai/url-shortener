@@ -14,9 +14,10 @@ const HTTP_FOUND = 302;
 const HTTP_NOT_FOUND = 404;
 const HTTP_GONE = 410;
 
-// A small HTML page for a person who followed a broken link. Only fixed text goes in, never
+// A small HTML page for a person who followed a broken link, or reached an address with
+// nothing behind it (app.ts uses it for that). Only fixed text goes in, never
 // anything from the request, so nothing a visitor types can end up in the page as HTML.
-function page(title: string, message: string): string {
+export function page(title: string, message: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>

@@ -13,7 +13,7 @@ export const STATS_DAYS = 30;
 // How many referring sites the stats list.
 export const TOP_REFERRERS = 5;
 // Milliseconds in a day. UTC has no daylight saving, so every UTC day is exactly this long.
-const DAY_MS = 86_400_000;
+export const DAY_MS = 86_400_000;
 
 // One row of the links table, with SQLite's column names.
 export interface LinkRow {

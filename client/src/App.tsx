@@ -43,6 +43,8 @@ function Home() {
       <section className="hero">
         <h1>Make long links short</h1>
         <p className="hero-sub">Paste a link, pick a name if you like, and see who clicks it.</p>
+        {/* The live demo runs on free hosting with no lasting disk, so say so up front. */}
+        <p className="demo-note">Demo: links are wiped when the server restarts, which happens after about 15 idle minutes.</p>
         <ShortenForm onCreated={created} />
         {/* key makes React build a fresh card for each new link, so screen readers announce it. */}
         {latest && <ResultCard key={latest.code} link={latest} />}

@@ -4,12 +4,16 @@
 
 // Express handles HTTP: routing and JSON parsing. The other two are only types.
 import express, { type ErrorRequestHandler, type Express } from 'express';
+// Joins folder names into a path, with the right separator for the operating system.
+import { join } from 'node:path';
+// Turns a file: URL into a plain path, which express.static and sendFile expect.
+import { fileURLToPath } from 'node:url';
 // The code generator, swappable in tests.
 import { type CodeGenerator, randomCode } from './codes.ts';
 // The database connection type.
 import type { Db } from './db.ts';
-// GET /:code.
-import { redirectRouter } from './redirect.ts';
+// GET /:code, and the small HTML page used for addresses with nothing behind them.
+import { page, redirectRouter } from './redirect.ts';
 // Everything under /api.
 import { apiRouter } from './routes.ts';
 // The error shape every failure is sent in, shared with the client.
@@ -26,14 +30,24 @@ const HTTP_SERVER_ERROR = 500;
 // New links one visitor may create per minute, unless the caller sets another limit.
 export const DEFAULT_CREATE_LIMIT = 20;
 
+// The built client (npm run build in client/). In production one server hands out the page
+// and the API, so there is one service and no cross-origin requests. In development Vite
+// serves the page instead and this folder may not exist; nothing below needs it to.
+export const CLIENT_DIST = fileURLToPath(new URL('../../client/dist', import.meta.url));
+
+// Vite puts a hash of each file's contents in its name under assets/, so a changed file gets
+// a new name. That makes it safe to let browsers keep these for a year without asking again.
+const ASSET_MAX_AGE = '1y';
+
 // What the caller passes in. Only the database is required; the rest have real defaults
 // and exist so a test can swap them: a fixed clock, a code generator that returns chosen
-// codes, a lower rate limit.
+// codes, a lower rate limit, a folder standing in for the client build.
 export interface AppOptions {
   db: Db;
   now?: () => Date;
   generateCode?: CodeGenerator;
   createLimit?: number;
+  clientDist?: string;
 }
 
 // The same services with every default filled in. The routers receive this.
@@ -47,6 +61,7 @@ export function createApp(options: AppOptions): Express {
     now: () => new Date(),
     generateCode: randomCode,
     createLimit: DEFAULT_CREATE_LIMIT,
+    clientDist: CLIENT_DIST,
     // Anything the caller passed wins over the defaults above.
     ...options,
   };
@@ -73,8 +88,33 @@ export function createApp(options: AppOptions): Express {
     res.status(HTTP_NOT_FOUND).json(body);
   });
 
-  // Short links, after /api so that "api" can never be treated as a code.
+  // The hashed build files, cached for a year (see ASSET_MAX_AGE). `immutable` tells the
+  // browser not to re-check them even on a reload.
+  app.use('/assets', express.static(join(deps.clientDist, 'assets'), { maxAge: ASSET_MAX_AGE, immutable: true }));
+  // Everything else in the build: index.html for /, and the favicon. A missing file or a
+  // missing folder just moves on to the next handler.
+  app.use(express.static(deps.clientDist));
+
+  // Short links, after /api and the files. A code can never shadow a file, because codes
+  // and aliases have no dot in them and every file name does.
   app.use(redirectRouter(deps));
+
+  // A stats page is part of the single-page app: the server sends index.html and the client
+  // reads the code from the address. This makes a reload or a shared stats link work.
+  app.get('/stats/:code', (_req, res, next) => {
+    // If the build is missing (as in development), fall through to the 404 page below
+    // instead of the error handler, which would show a file path.
+    res.sendFile('index.html', { root: deps.clientDist }, (err) => {
+      // The callback runs once sending ends; `err` is set only when it failed.
+      if (err) next();
+    });
+  });
+
+  // Any other address gets a small HTML 404 page, rather than Express's bare default.
+  app.use((_req, res) => {
+    // 404 "not found", as a page a person can read, with a link home.
+    res.status(HTTP_NOT_FOUND).type('html').send(page('Page not found', 'There is nothing at this address.'));
+  });
 
   // Errors always come back as JSON. Bad JSON bodies arrive here with status 400, and
   // bodies over the limit with 413. Express knows this is the error handler because it

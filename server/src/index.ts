@@ -5,14 +5,26 @@
 import { createApp } from './app.ts';
 // Opens server/links.db, or the file named by DB_PATH.
 import { openDb } from './db.ts';
+// Sample links for an empty database.
+import { seedIfEmpty } from './seed.ts';
 
 // Render (and other hosts) choose the port through PORT; 3000 is the local default.
 const DEFAULT_PORT = 3000;
 // Number() turns the text "10000" into 10000; `||` falls back when PORT is missing or not a number.
 const PORT = Number(process.env.PORT) || DEFAULT_PORT;
 
-// The real database, with the real clock and code generator (the defaults).
-const app = createApp({ db: openDb() });
+// The real database file.
+const db = openDb();
+
+// With SEED_IF_EMPTY set (as on the Render demo, whose database is wiped on every restart),
+// an empty database gets the sample links.
+if (process.env.SEED_IF_EMPTY) {
+  // Logs how many were added; 0 means the database already had links.
+  console.log(`Seeded ${seedIfEmpty(db, new Date())} sample links.`);
+}
+
+// The app over that database, with the real clock and code generator (the defaults).
+const app = createApp({ db });
 
 // Starts the HTTP server on PORT; the callback runs once it is ready.
 app.listen(PORT, () => {

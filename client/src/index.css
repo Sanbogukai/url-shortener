@@ -1,0 +1,703 @@
+/* All the app's styles. Colours live in variables at the top, so the dark theme only swaps
+   the variables and every rule below follows. The accent is violet, to set this app apart
+   from the blue of project 2. */
+
+/* :root is the <html> element; variables set here are visible to every element. */
+:root {
+  /* Page background. */
+  --bg: #f7f6fb;
+  /* Background of cards and inputs. */
+  --panel: #ffffff;
+  /* A slightly darker panel, for hovered rows and the alias prefix. */
+  --panel-alt: #f1eff8;
+  /* Main text colour. */
+  --text: #1d1a26;
+  /* Grey for secondary text: long URLs, hints, dates. */
+  --muted: #6b6779;
+  /* Thin lines around boxes and between rows. */
+  --border: #e4e1ee;
+  /* Violet for the main button, links and focus outlines. */
+  --accent: #6b3fd4;
+  /* Text on top of the accent colour. */
+  --on-accent: #ffffff;
+  /* A pale violet behind the selected expiry and the hero glow. */
+  --accent-soft: #eee8fd;
+  /* The chart's bar colour, checked for contrast against the card (dataviz validator). */
+  --bar: #6b3fd4;
+  /* Chart grid and axis text: quiet, so the bars lead. */
+  --grid: #e4e1ee;
+  /* Red for errors. */
+  --danger: #b42318;
+  /* Corner rounding. */
+  --radius: 12px;
+  /* Monospace fonts for short links, each system's own first. */
+  --mono: ui-monospace, 'Cascadia Code', Consolas, 'SF Mono', monospace;
+
+  /* Tells the browser the page supports both themes, so scrollbars and inputs match. */
+  color-scheme: light dark;
+  /* Each system's own interface font, so it loads instantly with no download. */
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* The base size every rem value is measured from. */
+  font-size: 16px;
+  /* Space between lines of text, as a multiple of the font size. */
+  line-height: 1.5;
+  /* Applies the colours chosen above. */
+  color: var(--text);
+  background: var(--bg);
+}
+
+/* The dark theme, used when the system is set to dark mode. Only the colours change. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121118;
+    --panel: #1b1a23;
+    --panel-alt: #25232f;
+    --text: #ebe9f2;
+    --muted: #a19db0;
+    --border: #2e2b3a;
+    --accent: #a78bfa;
+    --on-accent: #17132a;
+    --accent-soft: #2a2242;
+    /* Its own step, not a flip of the light one: checked against the dark card. */
+    --bar: #9a7cf6;
+    --grid: #2e2b3a;
+    --danger: #f97066;
+  }
+}
+
+/* Widths and heights include padding and border, so sizes add up as written. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* No default margin around the page. */
+body {
+  margin: 0;
+}
+
+/* Hides text visually but keeps it for screen readers (labels the design does not show). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Secondary text. */
+.muted {
+  color: var(--muted);
+}
+
+/* Centred text, for loading and error messages. */
+.center {
+  text-align: center;
+}
+
+/* Links use the accent colour. */
+a {
+  color: var(--accent);
+}
+
+/* One visible focus ring for everything a keyboard can reach. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The column everything sits in: narrow enough to read, centred on wide screens. */
+.page {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 0 1rem 4rem;
+}
+
+/* The top bar with the brand. */
+.site-header {
+  padding: 1rem 0;
+}
+
+/* The logo and name, as one link home. */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* Headings: tighter than body text. */
+h1,
+h2 {
+  line-height: 1.2;
+  margin: 0 0 0.75rem;
+}
+
+h2 {
+  font-size: 1.1rem;
+}
+
+/* A white box with a border; most sections are one. */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+}
+
+/* ---- Home: the hero ---- */
+
+/* The big centred form area, with a soft violet glow behind it. */
+.hero {
+  text-align: center;
+  padding: 2.5rem 0 1rem;
+  background: radial-gradient(ellipse at top, var(--accent-soft), transparent 70%);
+  border-radius: var(--radius);
+}
+
+/* The large headline. clamp shrinks it on phones and caps it on wide screens. */
+.hero h1 {
+  font-size: clamp(1.8rem, 6vw, 2.75rem);
+  letter-spacing: -0.02em;
+}
+
+/* The line under the headline. */
+.hero-sub {
+  color: var(--muted);
+  margin: 0 0 1.75rem;
+}
+
+/* The form card lines its contents up on the left, unlike the centred hero text. */
+.shorten {
+  text-align: left;
+  box-shadow: 0 8px 30px rgb(80 50 160 / 0.08);
+}
+
+/* The URL input and the Shorten button side by side. */
+.hero-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Every text box shares one look. */
+input[type='url'],
+input[type='text'],
+input[type='datetime-local'] {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  min-width: 0;
+}
+
+/* A field the server marked as wrong gets a red border. */
+input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+/* The big URL box takes the remaining width. */
+.hero-input {
+  flex: 1;
+  font-size: 1.1rem;
+  padding: 0.8rem 1rem;
+}
+
+/* Base button look; the variants below set the colours. */
+.button {
+  font: inherit;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 0.55rem 1rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+/* The main action: filled with the accent. */
+.button.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* A dimmed look while a request is on its way. */
+.button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* Secondary actions: outlined. */
+.button.secondary {
+  background: var(--panel);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.button.secondary:hover {
+  background: var(--panel-alt);
+}
+
+/* The quietest button, for Forget: text only until hovered. */
+.button.quiet {
+  background: transparent;
+  color: var(--muted);
+}
+
+.button.quiet:hover {
+  color: var(--danger);
+}
+
+/* Smaller buttons for list rows. */
+.button.small {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.875rem;
+}
+
+/* The Shorten button matches the big input's height. */
+.hero-button {
+  font-size: 1.05rem;
+  padding: 0.8rem 1.5rem;
+}
+
+/* The alias and expiry, side by side under the URL. */
+.options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-top: 1.25rem;
+}
+
+/* A fieldset's default border and padding are removed, so both options look alike. */
+.option {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+/* Option labels. */
+.option > label,
+.option > legend {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.35rem;
+  padding: 0;
+}
+
+/* The host and the alias input joined into one box. */
+.alias-field {
+  display: flex;
+}
+
+/* The grey host part in front of the alias. */
+.alias-prefix {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--muted);
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  padding: 0.55rem 0.5rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 50%;
+}
+
+/* The alias input takes the rest and squares its left corners against the prefix. */
+.alias-field input {
+  flex: 1;
+  border-radius: 0 8px 8px 0;
+  font-family: var(--mono);
+}
+
+/* The expiry buttons, joined into one bar. */
+.segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+/* One expiry button. */
+.segment {
+  font: inherit;
+  font-size: 0.875rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* The chosen expiry. */
+.segment.selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* The date picker that appears for Custom. */
+.custom-date {
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+/* Small grey help text under a field. */
+.hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0.3rem 0 0;
+}
+
+/* A message under a field. */
+.field-error {
+  font-size: 0.85rem;
+  color: var(--danger);
+  margin: 0.35rem 0 0;
+}
+
+/* A message for the whole form, such as the rate limit. */
+.form-error {
+  color: var(--danger);
+  margin: 1rem 0 0;
+}
+
+/* ---- Home: the result card ---- */
+
+/* Sits under the form, outlined in the accent so the new link stands out. */
+.result {
+  text-align: left;
+  margin-top: 1rem;
+  border-color: var(--accent);
+}
+
+/* The small caption above a short link. */
+.result-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 0.25rem;
+}
+
+/* The short link and its buttons on one line, wrapping on narrow screens. */
+.result-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+/* The short link itself, large and in monospace so each character is clear. */
+.result-link {
+  font-family: var(--mono);
+  font-size: 1.2rem;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+/* Copy and Stats. */
+.result-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.result-target {
+  margin: 0.75rem 0 0;
+}
+
+/* Long URLs break anywhere, so one with no spaces cannot push the page wider. */
+.long-url {
+  word-break: break-all;
+}
+
+/* ---- Home: Your links ---- */
+
+.your-links {
+  margin-top: 2.5rem;
+}
+
+/* The empty-state message. */
+.empty {
+  color: var(--muted);
+  text-align: center;
+}
+
+/* The list card: rows separated by lines, no padding of its own. */
+.link-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* One saved link. */
+.link-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border);
+}
+
+/* No line above the first row. */
+.link-row:first-child {
+  border-top: 0;
+}
+
+/* The short and long links stack; min-width 0 lets the long one be cut short. */
+.link-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.link-short {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+/* The long URL on one line, ending in … when it does not fit. */
+.link-long {
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Count, badge and buttons on the right. */
+.link-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.link-count {
+  font-size: 0.875rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The "Expired" tag: text plus outline, not colour alone. */
+.badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+}
+
+/* ---- Stats page ---- */
+
+/* Space between the stats page's cards. */
+.stats {
+  display: grid;
+  /* minmax(0, 1fr) lets the column shrink below the chart's minimum width, so on a phone
+     the chart scrolls inside its card instead of widening the whole page. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.stats-header p {
+  margin: 0.5rem 0 0;
+}
+
+/* The four figures in a row of equal boxes, two by two on phones. */
+.figures {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin: 0;
+}
+
+.figure {
+  padding: 1rem;
+}
+
+/* The figure's name. */
+.figure dt {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.figure dd {
+  margin: 0.25rem 0 0;
+  font-weight: 600;
+}
+
+/* The total is the headline number. */
+.figure-value {
+  font-size: 2rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The chart and its table. */
+.chart {
+  margin: 0;
+}
+
+/* The line naming the hovered day. */
+.chart-readout {
+  min-height: 1.5rem;
+  margin-bottom: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Lets the chart scroll sideways on a phone instead of squeezing the bars. */
+.chart-scroll {
+  overflow-x: auto;
+}
+
+/* The SVG fills the card, but never below a width where the labels still fit. */
+.chart-svg {
+  display: block;
+  width: 100%;
+  min-width: 36rem;
+  height: auto;
+}
+
+/* The bars, in the validated chart colour. */
+.chart-bar {
+  fill: var(--bar);
+}
+
+/* The hovered bar, lightened slightly so it stands out from its neighbours. */
+.chart-bar.active {
+  opacity: 0.75;
+}
+
+/* The invisible hover targets. */
+.chart-hit {
+  fill: transparent;
+}
+
+/* Grid and baseline: thin and quiet. */
+.chart-grid {
+  stroke: var(--grid);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.chart-baseline {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+/* Axis text in muted ink, never the bar colour. */
+.chart-axis {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+/* The "Show as table" disclosure. */
+.chart-table {
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.chart-table summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.chart-table table {
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+}
+
+.chart-table th,
+.chart-table td {
+  text-align: left;
+  padding: 0.2rem 1.5rem 0.2rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* The referrer list: no numbers in front, rows spaced apart. */
+.referrers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+/* Host on the left, count on the right. */
+.referrer-text {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.9rem;
+  margin-bottom: 0.25rem;
+}
+
+.referrer-host {
+  font-family: var(--mono);
+  word-break: break-all;
+}
+
+/* The full-width groove a referrer bar sits in. */
+.referrer-track {
+  height: 6px;
+  background: var(--panel-alt);
+  border-radius: 3px;
+}
+
+/* The bar, as wide as the referrer's share of the top one. */
+.referrer-bar {
+  height: 100%;
+  background: var(--bar);
+  border-radius: 3px;
+}
+
+/* The "No such link" card. */
+.center-card {
+  text-align: center;
+  margin-top: 3rem;
+}
+
+/* ---- Phones ---- */
+
+/* Below 40rem (640px) everything goes to one column. */
+@media (max-width: 40rem) {
+  /* URL box above the button, both full width. */
+  .hero-row {
+    flex-direction: column;
+  }
+
+  .options {
+    grid-template-columns: 1fr;
+  }
+
+  /* A saved link's buttons go under its text. */
+  .link-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .link-meta {
+    flex-wrap: wrap;
+  }
+
+  /* Two figures per row instead of four. */
+  .figures {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

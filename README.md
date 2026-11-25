@@ -60,7 +60,7 @@ Codes and aliases are case-sensitive. `api`, `assets`, `stats`, `favicon` and `r
 
 - **Security headers** from `helmet` on every answer: the API, the app, the redirects and the `404` and `410` pages. The Content-Security-Policy lets scripts, styles, images and requests come only from this site, and `Referrer-Policy: no-referrer` means the site a short link leads to is not told which short link was followed.
 - **Only web links.** `http` and `https` on a real domain name; `javascript:`, `data:`, `localhost`, bare IP addresses and links back to the shortener itself are refused.
-- **Google Safe Browsing.** Each new link is checked with the v5 Lookup API, and a link listed as phishing, malware or unwanted software is refused with a `400`. Every visit checks again, so a site that turns bad later stops redirecting and gets a `410` page that names no address. Clean answers are cached for an hour (unsafe ones for as long as Google says), at most 1,000 at a time. If Google cannot be reached within 2 seconds the link is allowed and the failure logged, so an outage never breaks the shortener. The key is `SAFE_BROWSING_API_KEY`, sent in a header; without it nothing is checked and the server logs a warning.
+- **Google Safe Browsing.** Each new link is checked with the v5 Lookup API, and a link listed as phishing, malware or unwanted software is refused with a `400`. Every visit checks again, so a site that turns bad later stops redirecting and gets a `410` page that names no address. Clean answers are cached for an hour (unsafe ones for as long as Google says), at most 1,000 at a time. If Google cannot be reached within 2 seconds, a new link is refused with a `503` and `Retry-After`, and the form shows a "Service temporarily unavailable" notice banner, so nothing unchecked is shortened; existing links keep redirecting, since they were checked when made. The key is `SAFE_BROWSING_API_KEY`, sent in a header; without it nothing is checked and the server logs a warning.
 - **Limits per visitor and minute:** 20 new links and 60 stats lookups. Stats are public to anyone with the code, so the lookup limit stops a script from guessing codes to read them; redirects are not limited. Request bodies are capped at 16 kB.
 - **Input** is checked with Zod before any SQL runs, and every query uses placeholders, never pasted text.
 
@@ -101,10 +101,10 @@ Express then serves the app, its files and the short links from one address.
 cd server && npm test
 ```
 
-99 tests in 9 files cover every route and every error status (`400`, `404`, `409`, `410`, `429`):
+101 tests in 9 files cover every route and every error status (`400`, `404`, `409`, `410`, `429`):
 
 - creating links with codes and aliases, and every way a create is refused;
-- the Safe Browsing check: caching, the key in a header, failing open, the bounded cache, refused creates and blocked redirects;
+- the Safe Browsing check: caching, the key in a header, the `503` when the check cannot run, the bounded cache, refused creates and blocked redirects;
 - redirects: the `302`, the `no-store` header, one click per visit, referrers, and the `404` and `410` pages;
 - stats: the 30-day chart with empty days filled in, expiry, and the top referrers;
 - code collisions, with a fake code generator that returns a taken code first;

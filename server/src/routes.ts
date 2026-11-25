@@ -146,7 +146,9 @@ export function apiRouter(deps: AppDeps): Router {
   });
 
   // Create a link from { url, alias?, expiresAt? }.
-  router.post('/links', createLimiter, (req, res) => {
+  // Async because of the Safe Browsing check; Express 5 passes a rejected promise to the
+  // error handler.
+  router.post('/links', createLimiter, async (req, res) => {
     // safeParse checks without throwing; `?? {}` treats a missing body as an empty one.
     const parsed = createBody.safeParse(req.body ?? {});
     // Each Zod issue becomes { field, message }; path is an array such as ['url'].
@@ -162,6 +164,12 @@ export function apiRouter(deps: AppDeps): Router {
     const issues = extraIssues(req, url, expiresAt, now);
     if (issues.length > 0) {
       badRequest(res, issues);
+      return;
+    }
+    // Asked last, after the free checks, so a bad request never costs a lookup. A link Google
+    // lists as phishing or malware is refused, so the shortener cannot disguise it.
+    if (await deps.checkUrl(url)) {
+      badRequest(res, [{ field: 'url', message: 'Google Safe Browsing lists this link as unsafe' }]);
       return;
     }
     // Everything except the code, with times in SQLite's format.

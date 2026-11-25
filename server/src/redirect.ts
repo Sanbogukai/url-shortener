@@ -49,7 +49,9 @@ export function redirectRouter(deps: AppDeps): Router {
   const router = Router();
 
   // Express also runs GET routes for HEAD requests, which ask for the headers only.
-  router.get('/:code', (req, res) => {
+  // Async because of the Safe Browsing check; Express 5 passes a rejected promise to the
+  // error handler.
+  router.get('/:code', async (req, res) => {
     // Every answer here, redirect or error, must be fetched fresh each time. A cached
     // redirect would skip the server, and that visit would never be counted.
     res.set('Cache-Control', 'no-store');
@@ -65,6 +67,14 @@ export function redirectRouter(deps: AppDeps): Router {
     if (isExpired(row, now)) {
       // 410 "gone": the link existed, and has expired on purpose.
       res.status(HTTP_GONE).type('html').send(page('Link expired', 'This short link has expired and no longer works.'));
+      return;
+    }
+    // Checked again on every visit (answers are cached for about an hour), so a site that
+    // turns bad after the link was made stops being reachable through it. The page names
+    // no address, so the visitor is not handed the bad link either. The visit is not counted.
+    if (await deps.checkUrl(row.url)) {
+      // 410 "gone": the link exists but will not be followed.
+      res.status(HTTP_GONE).type('html').send(page('Link blocked', 'Google Safe Browsing lists the page behind this short link as unsafe, so it has been blocked.'));
       return;
     }
     // Link checkers and previews often send HEAD; only a real GET is a visit.

@@ -18,6 +18,8 @@ import type { Db } from './db.ts';
 import { page, redirectRouter } from './redirect.ts';
 // Everything under /api.
 import { apiRouter } from './routes.ts';
+// The Safe Browsing check; allowAll stands in when no API key is set.
+import { allowAll, type UrlChecker } from './safeBrowsing.ts';
 // The error shape every failure is sent in, shared with the client.
 import type { ApiError } from '../../shared/types.ts';
 
@@ -50,7 +52,8 @@ const ASSET_MAX_AGE = '1y';
 
 // What the caller passes in. Only the database is required; the rest have real defaults
 // and exist so a test can swap them: a fixed clock, a code generator that returns chosen
-// codes, a lower rate limit, a folder standing in for the client build.
+// codes, a lower rate limit, a folder standing in for the client build, a fake Safe
+// Browsing check.
 export interface AppOptions {
   db: Db;
   now?: () => Date;
@@ -58,6 +61,7 @@ export interface AppOptions {
   createLimit?: number;
   lookupLimit?: number;
   clientDist?: string;
+  checkUrl?: UrlChecker;
 }
 
 // The same services with every default filled in. The routers receive this.
@@ -73,6 +77,8 @@ export function createApp(options: AppOptions): Express {
     createLimit: DEFAULT_CREATE_LIMIT,
     lookupLimit: DEFAULT_LOOKUP_LIMIT,
     clientDist: CLIENT_DIST,
+    // No check unless index.ts passes the real one (it needs an API key).
+    checkUrl: allowAll,
     // Anything the caller passed wins over the defaults above.
     ...options,
   };

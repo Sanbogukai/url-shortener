@@ -72,6 +72,19 @@ function cacheMs(unsafe: boolean, serverMs: number): number {
   return Math.min(Math.max(serverMs, MIN_SAFE_CACHE_MS), MAX_SAFE_CACHE_MS);
 }
 
+// Google's own explanation of a refused request, such as "API key not valid", read from the
+// error body ({ error: { message } }). It never contains the key. A body that is not JSON
+// gives a placeholder, so a strange answer cannot hide the status code.
+async function googleMessage(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: { message?: string } };
+    return body.error?.message ?? 'no message';
+  } catch {
+    // Not JSON at all: only the status is known.
+    return 'no readable message';
+  }
+}
+
 // Builds a checker that calls Google with the given key.
 export function createSafeBrowsingChecker(options: SafeBrowsingOptions): UrlChecker {
   // The real fetch, clock and console unless a test passed its own.
@@ -102,8 +115,9 @@ export function createSafeBrowsingChecker(options: SafeBrowsingOptions): UrlChec
       headers: { 'X-Goog-Api-Key': settings.apiKey },
       signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
     });
-    // A refused key, quota or outage: handled by the caller as "could not check".
-    if (!res.ok) throw new Error(`Safe Browsing answered ${res.status}`);
+    // A refused key, quota or outage: handled by the caller as "could not check". Google's
+    // message goes into the log, so the cause shows without guessing.
+    if (!res.ok) throw new Error(`Safe Browsing answered ${res.status}: ${await googleMessage(res)}`);
     const body = (await res.json()) as SearchResponse;
     // Any listed threat makes the link unsafe; Google also checks the link's parent paths and
     // domains, so a match may name a shorter URL than the one sent.

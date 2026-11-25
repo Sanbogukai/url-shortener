@@ -95,6 +95,17 @@ describe('the Safe Browsing checker', () => {
     expect(google).toHaveBeenCalledTimes(TWICE);
   });
 
+  it("logs Google's own reason for a refusal", async () => {
+    // Google's JSON error body, as it sends one for a bad key.
+    const refusing = vi.fn(async () =>
+      Response.json({ error: { message: 'API key not valid. Please pass a valid API key.' } }, { status: BAD_REQUEST }),
+    );
+    const { check, log } = makeChecker(refusing);
+
+    expect(await check(BAD_URL)).toBe('unavailable');
+    expect(log).toHaveBeenCalledWith('Safe Browsing check failed: Safe Browsing answered 400: API key not valid. Please pass a valid API key.');
+  });
+
   it('answers unavailable and logs when Google refuses, and does not cache the failure', async () => {
     const refusing = vi.fn(async () => new Response('denied', { status: FORBIDDEN }));
     const { check, log } = makeChecker(refusing);

@@ -8,7 +8,13 @@ import {
   MIN_SAFE_CACHE_MS,
   type UrlChecker,
 } from '../src/safeBrowsing.ts';
+import { CHECK_UNAVAILABLE } from '../src/routes.ts';
 import { BAD_REQUEST, CREATED, FOUND, GONE, GOOD_URL, insertLinkRow, makeApp, NOW } from './helpers.ts';
+
+// 503 "service unavailable": the answer when the check cannot run.
+const SERVICE_UNAVAILABLE = 503;
+// A link the stand-in checker cannot reach Google for.
+const UNREACHABLE_URL = 'https://slow.example.org/page';
 
 // A link the fake Google lists as phishing.
 const BAD_URL = 'https://phish.example.net/login';
@@ -44,8 +50,8 @@ describe('the Safe Browsing checker', () => {
   it('reports listed links as unsafe and others as safe', async () => {
     const { check } = makeChecker(fakeGoogle());
 
-    expect(await check(BAD_URL)).toBe(true);
-    expect(await check(GOOD_URL)).toBe(false);
+    expect(await check(BAD_URL)).toBe('unsafe');
+    expect(await check(GOOD_URL)).toBe('safe');
   });
 
   it('sends the key in a header, never in the address', async () => {
@@ -87,24 +93,24 @@ describe('the Safe Browsing checker', () => {
     expect(google).toHaveBeenCalledTimes(TWICE);
   });
 
-  it('allows the link and logs when Google refuses, and does not cache the failure', async () => {
+  it('answers unavailable and logs when Google refuses, and does not cache the failure', async () => {
     const refusing = vi.fn(async () => new Response('denied', { status: FORBIDDEN }));
     const { check, log } = makeChecker(refusing);
 
-    expect(await check(BAD_URL)).toBe(false);
+    expect(await check(BAD_URL)).toBe('unavailable');
     expect(log).toHaveBeenCalledWith(expect.stringContaining('403'));
     // Asked again next time, since nothing was cached.
     await check(BAD_URL);
     expect(refusing).toHaveBeenCalledTimes(TWICE);
   });
 
-  it('allows the link when the network fails', async () => {
+  it('answers unavailable when the network fails', async () => {
     const offline = vi.fn(async () => {
       throw new TypeError('fetch failed');
     });
     const { check, log } = makeChecker(offline);
 
-    expect(await check(BAD_URL)).toBe(false);
+    expect(await check(BAD_URL)).toBe('unavailable');
     expect(log).toHaveBeenCalledOnce();
   });
 
@@ -123,8 +129,11 @@ describe('the Safe Browsing checker', () => {
   });
 });
 
-// A stand-in checker for the app tests: BAD_URL is unsafe.
-const flagBad: UrlChecker = async (url) => url === BAD_URL;
+// A stand-in checker for the app tests: BAD_URL is unsafe, UNREACHABLE_URL cannot be checked.
+const flagBad: UrlChecker = async (url) => {
+  if (url === BAD_URL) return 'unsafe';
+  return url === UNREACHABLE_URL ? 'unavailable' : 'safe';
+};
 
 describe('the app with Safe Browsing', () => {
   it('refuses to shorten a listed link', async () => {
@@ -156,6 +165,28 @@ describe('the app with Safe Browsing', () => {
     // The page does not repeat the bad address.
     expect(res.text).not.toContain(BAD_URL);
     expect(db.prepare('SELECT COUNT(*) AS n FROM clicks WHERE link_id = ?').get(id)).toEqual({ n: 0 });
+  });
+
+  it('refuses to shorten a link it could not check, with 503 and the banner message', async () => {
+    const { api, db } = makeApp({ checkUrl: flagBad });
+
+    const res = await api.post('/api/links').send({ url: UNREACHABLE_URL });
+
+    expect(res.status).toBe(SERVICE_UNAVAILABLE);
+    expect(res.body).toEqual({ error: CHECK_UNAVAILABLE });
+    expect(res.headers['retry-after']).toBeDefined();
+    // Nothing was stored.
+    expect(db.prepare('SELECT COUNT(*) AS n FROM links').get()).toEqual({ n: 0 });
+  });
+
+  it('still redirects an existing link while the check is unavailable', async () => {
+    const { api, db } = makeApp({ checkUrl: flagBad });
+    insertLinkRow(db, 'abc1234', UNREACHABLE_URL);
+
+    const res = await api.get('/abc1234');
+
+    expect(res.status).toBe(FOUND);
+    expect(res.headers.location).toBe(UNREACHABLE_URL);
   });
 
   it('follows clean links as before', async () => {

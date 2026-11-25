@@ -28,6 +28,10 @@
   --grid: #e4e1ee;
   /* Red for errors. */
   --danger: #b42318;
+  /* The service notice banner: a calm amber, so an outage reads as a notice, not an error. */
+  --notice-bg: #fffaeb;
+  --notice-border: #f5d48a;
+  --notice-text: #7a4a00;
   /* Corner rounding. */
   --radius: 12px;
   /* Monospace fonts for short links, each system's own first. */
@@ -62,6 +66,9 @@
     --bar: #9a7cf6;
     --grid: #2e2b3a;
     --danger: #f97066;
+    --notice-bg: #2b2310;
+    --notice-border: #6b5217;
+    --notice-text: #f6d58e;
   }
 }
 
@@ -381,6 +388,34 @@ input[aria-invalid='true'] {
 .form-error {
   color: var(--danger);
   margin: 1rem 0 0;
+}
+
+/* A notice across the top of the form when a service the app relies on is down. */
+.notice-banner {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  text-align: left;
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--notice-border);
+  border-radius: var(--radius);
+  background: var(--notice-bg);
+  color: var(--notice-text);
+  font-size: 0.95rem;
+}
+
+/* The heading inside the banner. */
+.notice-banner strong {
+  display: block;
+}
+
+/* The small round info mark at the start. */
+.notice-icon {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.1rem;
 }
 
 /* ---- Home: the result card ---- */

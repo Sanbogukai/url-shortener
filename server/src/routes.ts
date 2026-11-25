@@ -22,6 +22,12 @@ const HTTP_CREATED = 201;
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
+const HTTP_SERVICE_UNAVAILABLE = 503;
+
+// What the client shows in its banner when the link safety check cannot run.
+export const CHECK_UNAVAILABLE = 'Link safety checks are temporarily unavailable. Please try again in a few minutes.';
+// Seconds a client is told to wait before trying again after that 503.
+const RETRY_AFTER_SECONDS = 120;
 
 // Browsers handle URLs up to about 2,000 characters reliably, so longer ones are refused.
 const MAX_URL = 2048;
@@ -166,10 +172,18 @@ export function apiRouter(deps: AppDeps): Router {
       badRequest(res, issues);
       return;
     }
-    // Asked last, after the free checks, so a bad request never costs a lookup. A link Google
-    // lists as phishing or malware is refused, so the shortener cannot disguise it.
-    if (await deps.checkUrl(url)) {
+    // Asked last, after the free checks, so a bad request never costs a lookup.
+    const verdict = await deps.checkUrl(url);
+    // A link Google lists as phishing or malware is refused, so the shortener cannot disguise it.
+    if (verdict === 'unsafe') {
       badRequest(res, [{ field: 'url', message: 'Google Safe Browsing lists this link as unsafe' }]);
+      return;
+    }
+    // Google could not be asked: nothing unchecked is shortened. 503 "service unavailable"
+    // tells the client to show its notice banner; Retry-After suggests when to try again.
+    if (verdict === 'unavailable') {
+      const body: ApiError = { error: CHECK_UNAVAILABLE };
+      res.status(HTTP_SERVICE_UNAVAILABLE).set('Retry-After', String(RETRY_AFTER_SECONDS)).json(body);
       return;
     }
     // Everything except the code, with times in SQLite's format.

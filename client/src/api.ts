@@ -7,6 +7,9 @@ import type { ApiError as ErrorBody, CreateLink, Issue, Link, LinkStats } from '
 
 // 404 "not found": the stats page shows its own message for this one.
 export const HTTP_NOT_FOUND = 404
+// 503 "service unavailable": the link safety check could not run, so the form shows its
+// notice banner instead of an error.
+export const HTTP_SERVICE_UNAVAILABLE = 503
 // Statuses from 500 up are the server's fault, not the request's.
 const HTTP_SERVER_ERROR = 500
 

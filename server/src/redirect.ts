@@ -72,7 +72,9 @@ export function redirectRouter(deps: AppDeps): Router {
     // Checked again on every visit (answers are cached for about an hour), so a site that
     // turns bad after the link was made stops being reachable through it. The page names
     // no address, so the visitor is not handed the bad link either. The visit is not counted.
-    if (await deps.checkUrl(row.url)) {
+    // 'unavailable' still redirects: the link was checked when it was made, and an outage at
+    // Google should not break every short link.
+    if ((await deps.checkUrl(row.url)) === 'unsafe') {
       // 410 "gone": the link exists but will not be followed.
       res.status(HTTP_GONE).type('html').send(page('Link blocked', 'Google Safe Browsing lists the page behind this short link as unsafe, so it has been blocked.'));
       return;

@@ -6,7 +6,7 @@ import { useId, useState, type FormEvent } from 'react'
 // The link the server returns.
 import type { Issue, Link } from '../../../shared/types.ts'
 // The API call and error helpers.
-import { ApiError, createLink, messageOf } from '../api.ts'
+import { ApiError, createLink, HTTP_SERVICE_UNAVAILABLE, messageOf } from '../api.ts'
 // The expiry buttons and their conversion.
 import { EXPIRY_PRESETS, nowForPicker, toExpiresAt, type ExpiryChoice } from '../expiry.ts'
 
@@ -31,6 +31,8 @@ export function ShortenForm({ onCreated }: { onCreated: (link: Link) => void }) 
   // Errors under particular fields, and one general error for everything else (429, offline).
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [formError, setFormError] = useState('')
+  // The notice banner's text when a service is down (a 503), or '' when there is none.
+  const [notice, setNotice] = useState('')
   // True while a request is on its way, so a double click cannot make two links.
   const [busy, setBusy] = useState(false)
   // A unique prefix for this form's element ids.
@@ -43,6 +45,7 @@ export function ShortenForm({ onCreated }: { onCreated: (link: Link) => void }) 
     // Clears the last attempt's errors.
     setFieldErrors({})
     setFormError('')
+    setNotice('')
     // The expiry is worked out now, so "1 day" counts from this click.
     const { expiresAt, error } = toExpiresAt(expiry, custom)
     // A Custom expiry with no date is caught here, without a round trip.
@@ -63,7 +66,9 @@ export function ShortenForm({ onCreated }: { onCreated: (link: Link) => void }) 
       setCustom('')
     } catch (caught) {
       // Field issues (400, and 409 for a taken alias) go under their fields; anything else at the top.
+      // A 503 means a service is down, not that the request was wrong: it gets the banner.
       if (caught instanceof ApiError && caught.issues.length > 0) setFieldErrors(byField(caught.issues))
+      else if (caught instanceof ApiError && caught.status === HTTP_SERVICE_UNAVAILABLE) setNotice(caught.message)
       else setFormError(messageOf(caught))
     } finally {
       setBusy(false)
@@ -77,6 +82,22 @@ export function ShortenForm({ onCreated }: { onCreated: (link: Link) => void }) 
     // noValidate turns off the browser's own pop-up checks, so every message looks the same
     // and comes from one place: the server's rules.
     <form className="shorten card" onSubmit={submit} noValidate>
+      {/* The service notice sits at the top of the card. role="status" announces it politely,
+          since it is news about the service, not a mistake in what was typed. */}
+      {notice && (
+        <div className="notice-banner" role="status">
+          {/* A circled "i", drawn inline so it needs no image file; hidden from screen readers. */}
+          <svg className="notice-icon" viewBox="0 0 20 20" aria-hidden="true">
+            <circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            <rect x="9.25" y="8.5" width="1.5" height="6" rx="0.75" fill="currentColor" />
+            <circle cx="10" cy="5.75" r="1" fill="currentColor" />
+          </svg>
+          <div>
+            <strong>Service temporarily unavailable</strong>
+            {notice}
+          </div>
+        </div>
+      )}
       <div className="hero-row">
         <label htmlFor={`${id}-url`} className="visually-hidden">
           Long URL

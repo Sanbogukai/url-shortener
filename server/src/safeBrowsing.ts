@@ -3,14 +3,15 @@
 //
 // It uses the v5 Lookup API (GET /v5/urls:search). v4 is retired on 31 March 2027.
 // Answers are cached, as the API's terms require, so a popular link costs one call an hour
-// rather than one per visit. When Google cannot be reached the link is allowed and the
-// failure is logged ("fail open"): the shortener keeps working, and the next check after the
-// outage catches a bad link anyway.
+// rather than one per visit. When Google cannot be reached the answer is "unavailable" and
+// the failure is logged. Each caller decides what that means: creating a link refuses it
+// (nothing unchecked gets shortened), while following an existing link still redirects (it
+// was checked when it was made, and an outage should not break every short link).
 
 // The address of the lookup. `urls` is the query parameter holding the link to check.
 const SEARCH_URL = 'https://safebrowsing.googleapis.com/v5/urls:search';
 
-// How long one lookup may take before the link is let through. Creating a link waits for
+// How long one lookup may take before it counts as unavailable. Creating a link waits for
 // this, so it is kept short.
 export const LOOKUP_TIMEOUT_MS = 2_000;
 // A clean answer is kept at least an hour. The API allows stretching a clean answer's cache
@@ -24,9 +25,11 @@ export const CACHE_MAX_ENTRIES = 1_000;
 // Seconds to milliseconds.
 const MS_PER_SECOND = 1_000;
 
-// Checks one link. Resolves true when Google lists it as unsafe, false otherwise (including
-// when the check could not be made).
-export type UrlChecker = (url: string) => Promise<boolean>;
+// The outcome of one check: listed as unsafe, not listed, or Google could not be asked.
+export type Verdict = 'safe' | 'unsafe' | 'unavailable';
+
+// Checks one link. Never rejects: a failed lookup resolves to 'unavailable'.
+export type UrlChecker = (url: string) => Promise<Verdict>;
 
 // The part of Google's answer used here. `threats` is missing or empty for a clean link.
 // `cacheDuration` is text such as "300s": how long the answer may be reused.
@@ -49,8 +52,11 @@ interface CacheEntry {
   expiresAt: number;
 }
 
-// A checker for when no API key is set (development, tests): every link is allowed.
-export const allowAll: UrlChecker = async () => false;
+// A checker for when no API key is set (development, tests): every link counts as safe.
+export const allowAll: UrlChecker = async () => 'safe';
+
+// A cached answer as a verdict.
+const verdictOf = (unsafe: boolean): Verdict => (unsafe ? 'unsafe' : 'safe');
 
 // "300s" or "3.5s" in milliseconds. parseFloat reads the number and stops at the "s".
 // Missing or unreadable text counts as zero, so the minimums below apply.
@@ -106,16 +112,15 @@ export function createSafeBrowsingChecker(options: SafeBrowsingOptions): UrlChec
   return async (url) => {
     // A cached answer that has not expired is used as it is.
     const cached = cache.get(url);
-    if (cached !== undefined && cached.expiresAt > settings.now().getTime()) return cached.unsafe;
+    if (cached !== undefined && cached.expiresAt > settings.now().getTime()) return verdictOf(cached.unsafe);
     try {
       const entry = await lookup(url);
       remember(url, entry);
-      return entry.unsafe;
+      return verdictOf(entry.unsafe);
     } catch (err) {
-      // Fail open: the link is allowed and nothing is cached, so the next request asks again.
-      // Only the error is logged, never the key.
-      settings.log(`Safe Browsing check failed, link allowed: ${err instanceof Error ? err.message : String(err)}`);
-      return false;
+      // Nothing is cached, so the next request asks again. Only the error is logged, never the key.
+      settings.log(`Safe Browsing check failed: ${err instanceof Error ? err.message : String(err)}`);
+      return 'unavailable';
     }
   };
 }

@@ -31,11 +31,38 @@ export type Verdict = 'safe' | 'unsafe' | 'unavailable';
 // Checks one link. Never rejects: a failed lookup resolves to 'unavailable'.
 export type UrlChecker = (url: string) => Promise<Verdict>;
 
-// The part of Google's answer used here. `threats` is missing or empty for a clean link.
-// `cacheDuration` is text such as "300s": how long the answer may be reused.
-interface SearchResponse {
-  threats?: { url: string; threatTypes: string[] }[];
-  cacheDuration?: string;
+// Google answers in binary protobuf. JSON is refused by this API ("Unsupported Output Format"),
+// so the bytes are read by hand. The wire types say how each field is stored.
+const WIRE_VARINT = 0;
+const WIRE_FIXED64 = 1;
+const WIRE_LENGTH = 2;
+const WIRE_FIXED32 = 5;
+// The low three bits of a field key hold the wire type; the rest hold the field number.
+const WIRE_TYPE_BITS = 3;
+const WIRE_TYPE_MASK = 7;
+// Each byte of a varint carries seven bits; the top bit says another byte follows.
+const VARINT_BASE = 2;
+const VARINT_BITS = 7;
+const VARINT_MORE = 128;
+const VARINT_MASK = 127;
+// Fixed-width fields, which are skipped because nothing read here uses them.
+const FIXED64_BYTES = 8;
+const FIXED32_BYTES = 4;
+// The field numbers used: threats and cacheDuration in the search reply, seconds and nanos
+// inside the Duration, and the message in an error reply.
+const SEARCH_THREATS_FIELD = 1;
+const SEARCH_DURATION_FIELD = 2;
+const DURATION_SECONDS_FIELD = 1;
+const DURATION_NANOS_FIELD = 2;
+const ERROR_MESSAGE_FIELD = 2;
+const NANOS_PER_MS = 1_000_000;
+
+// One field of a binary message: its number, its wire type and its value. A varint is a
+// number; a length-delimited field (text or a nested message) is its bytes.
+interface Field {
+  number: number;
+  wire: number;
+  value: number | Uint8Array;
 }
 
 // What the checker needs. Only the key is required; the rest exist so tests can swap them.
@@ -58,11 +85,75 @@ export const allowAll: UrlChecker = async () => 'safe';
 // A cached answer as a verdict.
 const verdictOf = (unsafe: boolean): Verdict => (unsafe ? 'unsafe' : 'safe');
 
-// "300s" or "3.5s" in milliseconds. parseFloat reads the number and stops at the "s".
-// Missing or unreadable text counts as zero, so the minimums below apply.
-function durationMs(text: string | undefined): number {
-  const seconds = Number.parseFloat(text ?? '');
-  return Number.isFinite(seconds) ? seconds * MS_PER_SECOND : 0;
+// Reads one varint starting at pos: the number, and the position after it. Each byte adds
+// seven more bits, lowest first. Past the end of the bytes a byte counts as 0, which ends the number.
+function readVarint(bytes: Uint8Array, pos: number, shift = 0, sum = 0): [number, number] {
+  // The byte at pos, or 0 past the end.
+  const byte = bytes[pos] ?? 0;
+  // This byte's seven bits, moved up to their place in the number.
+  const total = sum + (byte & VARINT_MASK) * VARINT_BASE ** shift;
+  // A clear top bit means this was the last byte.
+  if ((byte & VARINT_MORE) === 0) return [total, pos + 1];
+  return readVarint(bytes, pos + 1, shift + VARINT_BITS, total);
+}
+
+// Reads every field from pos to the end, in order. Fixed-width fields are skipped.
+function readFields(bytes: Uint8Array, pos = 0): Field[] {
+  // Nothing left to read.
+  if (pos >= bytes.length) return [];
+  // The key gives the field number and the wire type.
+  const [key, afterKey] = readVarint(bytes, pos);
+  const wire = key & WIRE_TYPE_MASK;
+  const number = key >>> WIRE_TYPE_BITS;
+  if (wire === WIRE_VARINT) {
+    // A varint field: its value follows the key.
+    const [value, next] = readVarint(bytes, afterKey);
+    return [{ number, wire, value }, ...readFields(bytes, next)];
+  }
+  if (wire === WIRE_LENGTH) {
+    // A length-delimited field: a length, then that many bytes.
+    const [length, start] = readVarint(bytes, afterKey);
+    return [{ number, wire, value: bytes.subarray(start, start + length) }, ...readFields(bytes, start + length)];
+  }
+  // Fixed-width fields have a set size; skip past them.
+  if (wire === WIRE_FIXED64) return readFields(bytes, afterKey + FIXED64_BYTES);
+  if (wire === WIRE_FIXED32) return readFields(bytes, afterKey + FIXED32_BYTES);
+  // Any other wire type means these bytes are not the reply expected.
+  throw new Error(`unknown protobuf wire type ${wire}`);
+}
+
+// The bytes of the first length-delimited field with this number, or undefined if none.
+function bytesOf(fields: Field[], number: number): Uint8Array | undefined {
+  // The first matching field.
+  const field = fields.find((candidate) => candidate.number === number);
+  return field?.value instanceof Uint8Array ? field.value : undefined;
+}
+
+// The number of the first varint field with this number, or 0 if none.
+function numberOf(fields: Field[], number: number): number {
+  // The first matching field.
+  const field = fields.find((candidate) => candidate.number === number);
+  return typeof field?.value === 'number' ? field.value : 0;
+}
+
+// A google.protobuf.Duration (seconds and nanos) in milliseconds. Missing parts count as 0.
+function durationMs(bytes: Uint8Array): number {
+  // The Duration's own fields.
+  const fields = readFields(bytes);
+  return numberOf(fields, DURATION_SECONDS_FIELD) * MS_PER_SECOND + numberOf(fields, DURATION_NANOS_FIELD) / NANOS_PER_MS;
+}
+
+// Reads Google's search reply: whether any threat is listed, and how long the answer may be kept.
+// Any threat entry at all makes the link unsafe.
+function parseSearch(bytes: Uint8Array): { unsafe: boolean; serverMs: number } {
+  // The reply's top-level fields.
+  const fields = readFields(bytes);
+  // The cache time, if Google sent one, as milliseconds.
+  const duration = bytesOf(fields, SEARCH_DURATION_FIELD);
+  return {
+    unsafe: fields.some((field) => field.number === SEARCH_THREATS_FIELD),
+    serverMs: duration === undefined ? 0 : durationMs(duration),
+  };
 }
 
 // How long an answer may be kept. An unsafe answer keeps exactly what Google said. A clean
@@ -72,15 +163,16 @@ function cacheMs(unsafe: boolean, serverMs: number): number {
   return Math.min(Math.max(serverMs, MIN_SAFE_CACHE_MS), MAX_SAFE_CACHE_MS);
 }
 
-// Google's own explanation of a refused request, such as "API key not valid", read from the
-// error body ({ error: { message } }). It never contains the key. A body that is not JSON
-// gives a placeholder, so a strange answer cannot hide the status code.
-async function googleMessage(res: Response): Promise<string> {
+// Google's own explanation of a refused request, such as "API key not valid", from the message
+// field of its error reply. It never contains the key. Unreadable bytes give a placeholder, so
+// the status code still shows.
+function googleMessage(bytes: Uint8Array): string {
   try {
-    const body = (await res.json()) as { error?: { message?: string } };
-    return body.error?.message ?? 'no message';
+    // The message's bytes, if the reply has one.
+    const text = bytesOf(readFields(bytes), ERROR_MESSAGE_FIELD);
+    return text === undefined ? 'no message' : new TextDecoder().decode(text);
   } catch {
-    // Not JSON at all: only the status is known.
+    // Not a protobuf message at all: only the status is known.
     return 'no readable message';
   }
 }
@@ -106,23 +198,24 @@ export function createSafeBrowsingChecker(options: SafeBrowsingOptions): UrlChec
 
   // Asks Google, and returns the answer with how long it may be kept.
   async function lookup(url: string): Promise<CacheEntry> {
-    // URLSearchParams escapes the link, so its own ? and & cannot break the query.
-    // alt=json asks for JSON: v5 answers in binary protobuf by default, which res.json() cannot
-    // read (it failed in production with "Unexpected non-whitespace character after JSON").
-    const query = new URLSearchParams({ urls: url, alt: 'json' });
+    // URLSearchParams escapes the link, so its own ? and & cannot break the query. No alt
+    // parameter is sent, so Google answers with its default binary reply, which is read below.
+    const query = new URLSearchParams({ urls: url });
     const res = await settings.fetch(`${SEARCH_URL}?${query}`, {
       // The key goes in a header rather than the address, so it stays out of request logs.
       headers: { 'X-Goog-Api-Key': settings.apiKey },
       signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
     });
+    // The whole reply, read as bytes.
+    const bytes = new Uint8Array(await res.arrayBuffer());
     // A refused key, quota or outage: handled by the caller as "could not check". Google's
     // message goes into the log, so the cause shows without guessing.
-    if (!res.ok) throw new Error(`Safe Browsing answered ${res.status}: ${await googleMessage(res)}`);
-    const body = (await res.json()) as SearchResponse;
-    // Any listed threat makes the link unsafe; Google also checks the link's parent paths and
-    // domains, so a match may name a shorter URL than the one sent.
-    const unsafe = (body.threats ?? []).length > 0;
-    return { unsafe, expiresAt: settings.now().getTime() + cacheMs(unsafe, durationMs(body.cacheDuration)) };
+    if (!res.ok) throw new Error(`Safe Browsing answered ${res.status}: ${googleMessage(bytes)}`);
+    // Whether the link is listed, and the cache time Google gave. Any listed threat makes the
+    // link unsafe; Google also checks the link's parent paths and domains, so a match may name
+    // a shorter URL than the one sent.
+    const { unsafe, serverMs } = parseSearch(bytes);
+    return { unsafe, expiresAt: settings.now().getTime() + cacheMs(unsafe, serverMs) };
   }
 
   return async (url) => {

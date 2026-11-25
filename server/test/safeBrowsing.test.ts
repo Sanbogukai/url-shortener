@@ -22,19 +22,67 @@ const BAD_URL = 'https://phish.example.net/login';
 const FORBIDDEN = 403;
 // A second's worth of milliseconds, for moving the fake clock.
 const SECOND_MS = 1_000;
-// Google's usual cache time for an answer, as it sends it: five minutes.
-const SERVER_CACHE = '300s';
+// Google's usual cache time for an answer, as it sends it: five minutes, in seconds.
+const SERVER_CACHE_SECONDS = 300;
 const SERVER_CACHE_MS = 300_000;
 // Two calls, or two steps of the clock.
 const TWICE = 2;
+// Protobuf encoding: each field key is its number times 8, plus its wire type.
+const FIELD_KEY_SHIFT = 8;
+const WIRE_VARINT = 0;
+const WIRE_LENGTH = 2;
+// Varint bytes hold seven bits each; 128 is the top bit that says another byte follows.
+const VARINT_STEP = 128;
+const VARINT_MORE = 128;
+// The field numbers the checker reads.
+const THREATS_FIELD = 1;
+const DURATION_FIELD = 2;
+const SECONDS_FIELD = 1;
+const ERROR_MESSAGE_FIELD = 2;
+// The status Google sends with a refused key's reply.
+const PROTO_BAD_REQUEST = 3;
+
+// A varint: seven bits per byte, lowest first, with the top bit set while more bytes follow.
+function varint(value: number): number[] {
+  // The low seven bits of the value, and the rest.
+  const low = value % VARINT_STEP;
+  const rest = Math.floor(value / VARINT_STEP);
+  return rest === 0 ? [low] : [low | VARINT_MORE, ...varint(rest)];
+}
+
+// A field holding a number.
+const numberField = (number: number, value: number): number[] => [
+  ...varint(number * FIELD_KEY_SHIFT + WIRE_VARINT),
+  ...varint(value),
+];
+
+// A field holding bytes: text or a nested message.
+const bytesField = (number: number, payload: number[]): number[] => [
+  ...varint(number * FIELD_KEY_SHIFT + WIRE_LENGTH),
+  ...varint(payload.length),
+  ...payload,
+];
+
+// The bytes of a text.
+const textBytes = (text: string): number[] => [...new TextEncoder().encode(text)];
+
+// Google's reply to a search: a threat entry (when the link is listed) and the cache time.
+function searchReply(listed: boolean, seconds: number): ArrayBuffer {
+  // One threat entry: the URL in its field 1.
+  const threat = listed ? bytesField(THREATS_FIELD, bytesField(1, textBytes(BAD_URL))) : [];
+  // The cache time, a Duration with its seconds.
+  const duration = bytesField(DURATION_FIELD, numberField(SECONDS_FIELD, seconds));
+  return Uint8Array.from([...threat, ...duration]).buffer as ArrayBuffer;
+}
 
 // A fake fetch that answers like Google: BAD_URL is a threat, everything else is clean.
 function fakeGoogle() {
   return vi.fn(async (input: string | URL | Request) => {
     // The link sent is in the `urls` query parameter.
     const sent = new URL(String(input)).searchParams.get('urls');
-    const threats = sent === BAD_URL ? [{ url: BAD_URL, threatTypes: ['SOCIAL_ENGINEERING'] }] : [];
-    return Response.json({ threats, cacheDuration: SERVER_CACHE });
+    return new Response(searchReply(sent === BAD_URL, SERVER_CACHE_SECONDS), {
+      headers: { 'Content-Type': 'application/x-protobuf' },
+    });
   });
 }
 
@@ -63,8 +111,8 @@ describe('the Safe Browsing checker', () => {
     // The first call's address and options.
     const [address, init] = google.mock.calls[0] as unknown as [string, RequestInit];
     expect(address).not.toContain('test-key');
-    // JSON, not the protobuf v5 sends by default.
-    expect(new URL(address).searchParams.get('alt')).toBe('json');
+    // No alt parameter: Google's default binary reply is the one that works.
+    expect(new URL(address).searchParams.has('alt')).toBe(false);
     expect(new Headers(init.headers).get('X-Goog-Api-Key')).toBe('test-key');
   });
 
@@ -96,10 +144,12 @@ describe('the Safe Browsing checker', () => {
   });
 
   it("logs Google's own reason for a refusal", async () => {
-    // Google's JSON error body, as it sends one for a bad key.
-    const refusing = vi.fn(async () =>
-      Response.json({ error: { message: 'API key not valid. Please pass a valid API key.' } }, { status: BAD_REQUEST }),
-    );
+    // Google's binary error reply for a bad key: a status code, then the message.
+    const reply = Uint8Array.from([
+      ...numberField(1, PROTO_BAD_REQUEST),
+      ...bytesField(ERROR_MESSAGE_FIELD, textBytes('API key not valid. Please pass a valid API key.')),
+    ]);
+    const refusing = vi.fn(async () => new Response(reply, { status: BAD_REQUEST }));
     const { check, log } = makeChecker(refusing);
 
     expect(await check(BAD_URL)).toBe('unavailable');

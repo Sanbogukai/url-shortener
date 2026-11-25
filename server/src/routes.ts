@@ -130,6 +130,21 @@ export function apiRouter(deps: AppDeps): Router {
     },
   });
 
+  // At most deps.lookupLimit stats lookups per visitor per minute. Stats are public to
+  // anyone who has the code, so this keeps a script from guessing codes to read them.
+  const lookupLimiter = rateLimit({
+    windowMs: MINUTE_MS,
+    limit: deps.lookupLimit,
+    // Same headers as the create limit.
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    // Answers 429 in the API's usual JSON shape.
+    handler: (_req, res, _next, options) => {
+      const body: ApiError = { error: 'Too many lookups; try again in a minute' };
+      res.status(options.statusCode).json(body);
+    },
+  });
+
   // Create a link from { url, alias?, expiresAt? }.
   router.post('/links', createLimiter, (req, res) => {
     // safeParse checks without throwing; `?? {}` treats a missing body as an empty one.
@@ -176,7 +191,9 @@ export function apiRouter(deps: AppDeps): Router {
   });
 
   // One link with its stats.
-  router.get('/links/:code', (req, res) => {
+  // The route string is also passed as a type, because with the limiter in front TypeScript
+  // can no longer work out on its own that req.params has a code.
+  router.get<'/links/:code'>('/links/:code', lookupLimiter, (req, res) => {
     // A value that cannot be a code is not looked up at all.
     const row = looksLikeCode(req.params.code) ? findLink(deps.db, req.params.code) : undefined;
     if (row === undefined) {

@@ -4,6 +4,8 @@
 
 // Express handles HTTP: routing and JSON parsing. The other two are only types.
 import express, { type ErrorRequestHandler, type Express } from 'express';
+// Sets the security headers (Content-Security-Policy and friends) on every answer.
+import helmet from 'helmet';
 // Joins folder names into a path, with the right separator for the operating system.
 import { join } from 'node:path';
 // Turns a file: URL into a plain path, which express.static and sendFile expect.
@@ -33,6 +35,9 @@ const TRUSTED_PROXY_HOPS = 3;
 
 // New links one visitor may create per minute, unless the caller sets another limit.
 export const DEFAULT_CREATE_LIMIT = 20;
+// Stats lookups one visitor may make per minute. Far more than a person clicks, but it stops
+// a script from trying code after code to read the stats of links it was never given.
+export const DEFAULT_LOOKUP_LIMIT = 60;
 
 // The built client (npm run build in client/). In production one server hands out the page
 // and the API, so there is one service and no cross-origin requests. In development Vite
@@ -51,6 +56,7 @@ export interface AppOptions {
   now?: () => Date;
   generateCode?: CodeGenerator;
   createLimit?: number;
+  lookupLimit?: number;
   clientDist?: string;
 }
 
@@ -65,6 +71,7 @@ export function createApp(options: AppOptions): Express {
     now: () => new Date(),
     generateCode: randomCode,
     createLimit: DEFAULT_CREATE_LIMIT,
+    lookupLimit: DEFAULT_LOOKUP_LIMIT,
     clientDist: CLIENT_DIST,
     // Anything the caller passed wins over the defaults above.
     ...options,
@@ -82,6 +89,13 @@ export function createApp(options: AppOptions): Express {
   // is ignored. Trusting fewer hops made req.ip a proxy that changes between requests,
   // which split one visitor's limit across several counters.
   app.set('trust proxy', TRUSTED_PROXY_HOPS);
+
+  // Security headers first, so every answer below carries them: the API, the page, the
+  // 404 page and the redirects. helmet's default Content-Security-Policy lets scripts, styles,
+  // images and requests come only from this site, so an injected script could neither load
+  // nor send data anywhere. Its Referrer-Policy (no-referrer) also applies to the redirects,
+  // so the site a short link leads to is not told which short link was used.
+  app.use(helmet());
 
   // Parses JSON request bodies into req.body, refusing anything over the limit with a 413.
   app.use(express.json({ limit: JSON_LIMIT }));

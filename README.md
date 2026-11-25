@@ -30,7 +30,7 @@ Project 3 of a full-stack practice series. The new skill here is automated API t
 | ---- | ----- |
 | Language | TypeScript on both sides |
 | Client | React 19, Vite, an SVG chart with no chart library, oxlint |
-| Server | Node, Express 5, Zod 4, `express-rate-limit`; Node runs the `.ts` files directly, and `tsc --noEmit` checks them |
+| Server | Node, Express 5, Zod 4, `helmet`, `express-rate-limit`; Node runs the `.ts` files directly, and `tsc --noEmit` checks them |
 | Database | SQLite through `better-sqlite3`: a `links` table and a `clicks` table with one row per visit |
 | Tests | Vitest and Supertest, run in GitHub Actions on every push |
 | Hosting | Render free web service; Express serves the built client |
@@ -51,9 +51,17 @@ Errors from the API are JSON:
 | `400` | Bad input, with `{ error, issues: [{ field, message }] }` |
 | `404` | No link with that code |
 | `409` | The alias is taken |
-| `429` | More than 20 new links in a minute |
+| `413` | A request body over 16 kB |
+| `429` | More than 20 new links, or more than 60 stats lookups, in a minute |
 
 Codes and aliases are case-sensitive. `api`, `assets`, `stats`, `favicon` and `robots` are reserved, so they never clash with the app's own addresses. Times are UTC.
+
+## Security
+
+- **Security headers** from `helmet` on every answer: the API, the app, the redirects and the `404` and `410` pages. The Content-Security-Policy lets scripts, styles, images and requests come only from this site, and `Referrer-Policy: no-referrer` means the site a short link leads to is not told which short link was followed.
+- **Only web links.** `http` and `https` on a real domain name; `javascript:`, `data:`, `localhost`, bare IP addresses and links back to the shortener itself are refused.
+- **Limits per visitor and minute:** 20 new links and 60 stats lookups. Stats are public to anyone with the code, so the lookup limit stops a script from guessing codes to read them; redirects are not limited. Request bodies are capped at 16 kB.
+- **Input** is checked with Zod before any SQL runs, and every query uses placeholders, never pasted text.
 
 ## Run it locally
 
@@ -92,13 +100,14 @@ Express then serves the app, its files and the short links from one address.
 cd server && npm test
 ```
 
-82 tests in 7 files cover every route and every error status (`400`, `404`, `409`, `410`, `429`):
+88 tests in 8 files cover every route and every error status (`400`, `404`, `409`, `410`, `429`):
 
 - creating links with codes and aliases, and every way a create is refused;
 - redirects: the `302`, the `no-store` header, one click per visit, referrers, and the `404` and `410` pages;
 - stats: the 30-day chart with empty days filled in, expiry, and the top referrers;
 - code collisions, with a fake code generator that returns a taken code first;
-- the rate limit, including that it counts the visitor and not a proxy or a forged header;
+- the rate limits, including that they count the visitor and not a proxy or a forged header, and that the lookup limit never blocks redirects;
+- the security headers on the API, the `404` page and the redirects;
 - the built client served beside the short links, and the seed data.
 
 `createApp()` takes the database, the clock and the code generator as options. Each test gets a fresh in-memory database and a fixed clock, so expiry and the chart are deterministic and the tests never share state.

@@ -63,6 +63,8 @@ describe('the Safe Browsing checker', () => {
     // The first call's address and options.
     const [address, init] = google.mock.calls[0] as unknown as [string, RequestInit];
     expect(address).not.toContain('test-key');
+    // JSON, not the protobuf v5 sends by default.
+    expect(new URL(address).searchParams.get('alt')).toBe('json');
     expect(new Headers(init.headers).get('X-Goog-Api-Key')).toBe('test-key');
   });
 

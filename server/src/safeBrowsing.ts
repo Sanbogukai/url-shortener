@@ -94,7 +94,9 @@ export function createSafeBrowsingChecker(options: SafeBrowsingOptions): UrlChec
   // Asks Google, and returns the answer with how long it may be kept.
   async function lookup(url: string): Promise<CacheEntry> {
     // URLSearchParams escapes the link, so its own ? and & cannot break the query.
-    const query = new URLSearchParams({ urls: url });
+    // alt=json asks for JSON: v5 answers in binary protobuf by default, which res.json() cannot
+    // read (it failed in production with "Unexpected non-whitespace character after JSON").
+    const query = new URLSearchParams({ urls: url, alt: 'json' });
     const res = await settings.fetch(`${SEARCH_URL}?${query}`, {
       // The key goes in a header rather than the address, so it stays out of request logs.
       headers: { 'X-Goog-Api-Key': settings.apiKey },
